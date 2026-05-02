@@ -1,14 +1,23 @@
 import streamlit as st
+
 from database.queries import get_user_settings, upsert_user_settings
 from expenses.entries import fetch_categories
+from utils.ui import top_bar, page_hero, section_title, alert_card
 
 
 def settings_page():
-    st.title("⚙️ Settings")
-
     user_id = st.session_state.user_id
 
+    top_bar("Settings", "Application Controls", "Defaults and Behavior")
+
+    page_hero(
+        "Application Behavior Settings",
+        "Control defaults and workflow behavior without touching financial logic.",
+        "Settings should not own budget, spending calculations, or analytics. Those belong to Profile, Expenses, Overview, and Visual Analysis."
+    )
+
     settings = get_user_settings(user_id)
+
     if settings:
         (
             default_payment,
@@ -26,48 +35,67 @@ def settings_page():
         read_only = False
         confirm_delete = True
 
-    # ===============================
-    # EXPENSE DEFAULTS
-    # ===============================
-    st.subheader("Expense Defaults")
+    section_title("Expense Defaults")
 
     categories = fetch_categories(user_id)
-    cat_names = [c[1] for c in categories]
+    cat_names = [category[1] for category in categories]
 
-    col1, col2, col3 = st.columns(3)
+    with st.container(border=True):
+        col1, col2, col3 = st.columns(3)
 
-    with col1:
-        default_payment = st.selectbox(
-            "Default Payment Mode",
-            ["Cash", "UPI", "Card", "Bank Transfer"],
-            index=["Cash", "UPI", "Card", "Bank Transfer"].index(default_payment)
+        with col1:
+            payment_options = ["Cash", "UPI", "Card", "Bank Transfer"]
+            payment_index = payment_options.index(default_payment) if default_payment in payment_options else 0
+
+            default_payment = st.selectbox(
+                "Default Payment Mode",
+                payment_options,
+                index=payment_index
+            )
+
+        with col2:
+            category_options = cat_names if cat_names else ["None"]
+
+            if default_category in category_options:
+                category_index = category_options.index(default_category)
+            else:
+                category_index = 0
+
+            default_category = st.selectbox(
+                "Default Category",
+                category_options,
+                index=category_index
+            )
+
+        with col3:
+            date_options = ["YYYY-MM-DD", "DD-MM-YYYY", "MM-DD-YYYY"]
+            date_index = date_options.index(date_format) if date_format in date_options else 0
+
+            date_format = st.selectbox(
+                "Date Format",
+                date_options,
+                index=date_index
+            )
+
+    section_title("Application Behavior")
+
+    with st.container(border=True):
+        auto_open = st.checkbox(
+            "Auto-open last file on login",
+            value=bool(auto_open)
         )
 
-    with col2:
-        default_category = st.selectbox(
-            "Default Category",
-            cat_names if cat_names else ["None"],
-            index=cat_names.index(default_category) if default_category in cat_names else 0
+        read_only = st.checkbox(
+            "Enable read-only mode for closed files",
+            value=bool(read_only)
         )
 
-    with col3:
-        date_format = st.selectbox(
-            "Date Format",
-            ["YYYY-MM-DD", "DD-MM-YYYY", "MM-DD-YYYY"]
+        confirm_delete = st.checkbox(
+            "Confirm before delete",
+            value=bool(confirm_delete)
         )
 
-    st.markdown("---")
-
-    # ===============================
-    # APPLICATION BEHAVIOR
-    # ===============================
-    st.subheader("Application Behavior")
-
-    auto_open = st.checkbox("Auto-open last file on login", value=auto_open)
-    read_only = st.checkbox("Enable read-only mode for closed files", value=read_only)
-    confirm_delete = st.checkbox("Confirm before delete", value=confirm_delete)
-
-    st.markdown("---")
+    section_title("Save Changes")
 
     if st.button("Save Settings"):
         upsert_user_settings(
@@ -79,4 +107,11 @@ def settings_page():
             read_only_closed_files=read_only,
             confirm_before_delete=confirm_delete
         )
-        st.success("Settings updated successfully")
+
+        st.success("Settings updated successfully.")
+
+    alert_card(
+        "Design rule",
+        "Settings controls application behavior only. Do not put budget or spending logic here.",
+        "info"
+    )
