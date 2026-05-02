@@ -1,5 +1,5 @@
-import streamlit as st
 import datetime
+import streamlit as st
 
 from database.queries import (
     get_user_files,
@@ -9,86 +9,174 @@ from database.queries import (
     get_user_budget
 )
 
+from utils.ui import top_bar, page_hero, section_title, metric_card, alert_card
+
 
 def overview_page():
-    st.title("📊 Overview")
-
     user_id = st.session_state.user_id
+
+    top_bar("Overview", "Expense Analytics", "Read-Only Insights")
+
+    page_hero(
+        "Analytical Summary",
+        "Understand your spending behavior without modifying data.",
+        "Overview converts your expense entries into budget usage, average spending, highest expense day, and month-over-month comparison."
+    )
+
     files = get_user_files(user_id)
 
     if not files:
-        st.info("No expense files available.")
+        alert_card(
+            "No expense file available",
+            "Create a file from the Expenses page before using Overview.",
+            "warning"
+        )
         return
 
-    file_map = {f[1]: f[0] for f in files}
-    selected_file = st.selectbox("Select File", list(file_map.keys()))
+    file_map = {file[1]: file[0] for file in files}
+
+    active_file_name = st.session_state.get("active_file_name")
+    default_index = 0
+
+    if active_file_name in file_map:
+        default_index = list(file_map.keys()).index(active_file_name)
+
+    selected_file = st.selectbox(
+        "Select File",
+        list(file_map.keys()),
+        index=default_index
+    )
+
     file_id = file_map[selected_file]
+    st.session_state.active_file_id = file_id
+    st.session_state.active_file_name = selected_file
 
-    # ---------- DATE RANGE ----------
     col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date", datetime.date.today().replace(day=1))
-    with col2:
-        end_date = st.date_input("End Date", datetime.date.today())
 
-    # ---------- SPENDING SUMMARY ----------
+    with col1:
+        start_date = st.date_input(
+            "Start Date",
+            datetime.date.today().replace(day=1)
+        )
+
+    with col2:
+        end_date = st.date_input(
+            "End Date",
+            datetime.date.today()
+        )
+
+    if start_date > end_date:
+        alert_card(
+            "Invalid date range",
+            "Start date cannot be later than end date.",
+            "danger"
+        )
+        return
+
     total_spend, active_days = get_period_spending(
-        user_id, file_id, start_date, end_date
+        user_id,
+        file_id,
+        start_date,
+        end_date
     )
 
     avg_daily_spend = round(total_spend / active_days, 2) if active_days else 0
 
     highest_day = get_highest_expense_day(
-        user_id, file_id, start_date, end_date
+        user_id,
+        file_id,
+        start_date,
+        end_date
     )
 
-    st.markdown("### 📌 Spending Summary")
-    colA, colB, colC = st.columns(3)
+    section_title("Spending Summary")
 
-    colA.metric("Total Spend", f"₹ {total_spend}")
-    colB.metric("Average Daily Spend", f"₹ {avg_daily_spend}")
-    colC.metric(
-        "Highest Expense Day",
-        f"{highest_day[0]} (₹ {highest_day[1]})" if highest_day else "—"
-    )
+    m1, m2, m3 = st.columns(3)
 
-    st.markdown("---")
+    with m1:
+        metric_card("Total Spend", f"Rs. {total_spend}", "Selected period")
 
-    # ---------- BUDGET MONITORING ----------
+    with m2:
+        metric_card("Average Daily Spend", f"Rs. {avg_daily_spend}", f"{active_days} active days")
+
+    with m3:
+        if highest_day:
+            metric_card("Highest Expense Day", str(highest_day[0]), f"Rs. {highest_day[1]}")
+        else:
+            metric_card("Highest Expense Day", "None", "No spending found")
+
+    section_title("Budget Monitoring")
+
     budget = get_user_budget(user_id)
     usage_pct = round((total_spend / budget) * 100, 2) if budget else 0
-    status = "Exceeded" if total_spend > budget else "Within Budget"
+    status = "Exceeded" if budget and total_spend > budget else "Within Budget"
 
-    st.markdown("### 💰 Budget Monitoring")
+    b1, b2, b3 = st.columns(3)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Monthly Budget", f"₹ {budget}")
-    col2.metric("Budget Used (%)", f"{usage_pct}%")
-    col3.metric("Status", status)
+    with b1:
+        metric_card("Monthly Budget", f"Rs. {budget}", "Set from Profile")
 
-    st.markdown("---")
+    with b2:
+        metric_card("Budget Used", f"{usage_pct}%", "Based on selected period")
 
-    # ---------- MONTH-OVER-MONTH ----------
+    with b3:
+        metric_card("Status", status, "Budget condition")
+
+    if not budget:
+        alert_card(
+            "Budget not set",
+            "Go to Profile and set your monthly budget for accurate analysis.",
+            "warning"
+        )
+    elif total_spend > budget:
+        alert_card(
+            "Budget exceeded",
+            "Your spending for the selected period is higher than your monthly budget.",
+            "danger"
+        )
+    elif usage_pct >= 80:
+        alert_card(
+            "Budget usage is high",
+            "You have used more than 80 percent of your monthly budget.",
+            "warning"
+        )
+    else:
+        alert_card(
+            "Budget condition is stable",
+            "Your spending is currently within the safe budget range.",
+            "success"
+        )
+
+    section_title("Month-over-Month Comparison")
+
     today = datetime.date.today()
+
     current_month_total = get_monthly_total(
-        user_id, file_id, today.year, today.month
+        user_id,
+        file_id,
+        today.year,
+        today.month
     )
 
-    prev_month = today.replace(day=1) - datetime.timedelta(days=1)
-    prev_month_total = get_monthly_total(
-        user_id, file_id, prev_month.year, prev_month.month
+    previous_month = today.replace(day=1) - datetime.timedelta(days=1)
+
+    previous_month_total = get_monthly_total(
+        user_id,
+        file_id,
+        previous_month.year,
+        previous_month.month
     )
 
-    if prev_month_total > 0:
+    if previous_month_total > 0:
         mom_change = round(
-            ((current_month_total - prev_month_total) / prev_month_total) * 100, 2
+            ((current_month_total - previous_month_total) / previous_month_total) * 100,
+            2
         )
     else:
         mom_change = 0
 
-    st.markdown("### 📈 Month-over-Month Comparison")
-    st.metric(
-        "Change",
+    metric_card(
+        "Monthly Change",
         f"{mom_change}%",
-        delta=f"{mom_change}%",
+        "Current month compared with previous month"
     )
