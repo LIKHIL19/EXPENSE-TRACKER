@@ -4,7 +4,7 @@ from mysql.connector import Error
 DB_CONFIG = {
     "host": "localhost",
     "user": "root",
-    "password": "Likhil@1976",
+    "password": "----------",
     "database": "expense_tracker"
 }
 
