@@ -1,97 +1,109 @@
-import streamlit as st
 import datetime
+import streamlit as st
 
 from database.queries import (
     get_user_profile,
     get_user_budget,
     upsert_budget,
-    get_usage_stats
+    get_usage_stats,
+    get_file_total
 )
+
+from database.connection import execute_query
 from auth.login import authenticate_user
-import profile
+from utils.hashing import hash_password
+from utils.ui import top_bar, page_hero, section_title, metric_card, alert_card
 
 
 def profile_page():
-    st.title("👤 Profile")
-
     user_id = st.session_state.user_id
     username = st.session_state.username
 
-    # ===============================
-    # ACCOUNT INFORMATION
-    # ===============================
-    st.subheader("Account Information")
+    top_bar("Profile", "Account Center", "Identity and Budget")
+
+    page_hero(
+        "Profile and Budget Ownership",
+        "Manage your account identity, budget, usage, and security.",
+        "Profile owns the monthly budget. Other pages only read the budget value for analysis and warnings."
+    )
+
+    section_title("Account Information")
 
     profile = get_user_profile(user_id)
+
     if profile:
         uname, created_at = profile
     else:
         uname, created_at = username, "-"
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Username", uname)
-    col2.metric("Account Created", str(created_at).split(" ")[0])
-    st.markdown("---")
+    c1, c2 = st.columns(2)
 
-    # ===============================
-    # BUDGET DETAILS (OWNED HERE)
-    # ===============================
-    st.subheader("💰 Monthly Budget")
+    with c1:
+        metric_card("Username", uname, "Current account")
+
+    with c2:
+        created_display = str(created_at).split(" ")[0] if created_at else "-"
+        metric_card("Account Created", created_display, "Registration date")
+
+    section_title("Monthly Budget")
 
     current_budget = get_user_budget(user_id)
 
-    total_spent_this_month = 0
-    today = datetime.date.today()
+    total_spent_this_file = 0
 
-    from database.queries import get_file_total
     if st.session_state.get("active_file_id"):
-        total_spent_this_month = get_file_total(
-            user_id, st.session_state.active_file_id
+        total_spent_this_file = get_file_total(
+            user_id,
+            st.session_state.active_file_id
         )
 
-    remaining = current_budget - total_spent_this_month
+    remaining = current_budget - total_spent_this_file
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Budget", f"₹ {current_budget}")
-    c2.metric("Used", f"₹ {total_spent_this_month}")
-    c3.metric("Remaining", f"₹ {remaining}")
+    b1, b2, b3 = st.columns(3)
 
-    with st.expander("✏️ Update Monthly Budget"):
+    with b1:
+        metric_card("Budget", f"Rs. {current_budget}", "Monthly limit")
+
+    with b2:
+        metric_card("Used", f"Rs. {total_spent_this_file}", "Active file total")
+
+    with b3:
+        metric_card("Remaining", f"Rs. {remaining}", "Budget balance")
+
+    with st.expander("Update Monthly Budget"):
         new_budget = st.number_input(
             "Monthly Budget Amount",
             min_value=0,
             step=500,
             value=int(current_budget)
         )
+
         if st.button("Update Budget"):
             upsert_budget(user_id, new_budget)
-            st.success("Budget updated")
+            st.success("Budget updated successfully.")
             st.rerun()
 
-    st.markdown("---")
-
-    # ===============================
-    # USAGE STATISTICS
-    # ===============================
-    st.subheader("📊 Usage Statistics")
+    section_title("Usage Statistics")
 
     stats = get_usage_stats(user_id)
+
     if stats:
         total_files, total_expenses, active_days = stats
     else:
         total_files, total_expenses, active_days = 0, 0, 0
 
     s1, s2, s3 = st.columns(3)
-    s1.metric("Total Files", total_files)
-    s2.metric("Total Expenses", total_expenses)
-    s3.metric("Active Days", active_days)
 
-    st.markdown("---")
+    with s1:
+        metric_card("Total Files", total_files, "Ledgers created")
 
-    # ===============================
-    # SECURITY
-    # ===============================
-    st.subheader("🔐 Security")
+    with s2:
+        metric_card("Total Expenses", total_expenses, "Entries logged")
+
+    with s3:
+        metric_card("Active Days", active_days, "Unique spending days")
+
+    section_title("Security")
 
     with st.expander("Change Password"):
         old_pwd = st.text_input("Current Password", type="password")
@@ -99,21 +111,27 @@ def profile_page():
         confirm_pwd = st.text_input("Confirm New Password", type="password")
 
         if st.button("Change Password"):
-            if new_pwd != confirm_pwd:
-                st.error("Passwords do not match")
+            if not old_pwd or not new_pwd or not confirm_pwd:
+                st.error("All password fields are required.")
+            elif new_pwd != confirm_pwd:
+                st.error("New passwords do not match.")
             else:
                 ok, _ = authenticate_user(username, old_pwd)
+
                 if not ok:
-                    st.error("Current password incorrect")
+                    st.error("Current password is incorrect.")
                 else:
-                    from database.queries import execute_query
+                    new_hash = hash_password(new_pwd)
+
                     execute_query(
-                        "UPDATE users SET password = %s WHERE id = %s",
-                        (new_pwd, user_id)
+                        "UPDATE users SET password_hash = %s WHERE id = %s",
+                        (new_hash, user_id)
                     )
-                    st.success("Password changed successfully")
+
+                    st.success("Password changed successfully.")
 
     if st.button("Logout"):
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+
         st.rerun()
