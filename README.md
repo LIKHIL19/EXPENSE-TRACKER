@@ -1,4 +1,5 @@
 # Expense Tracker Web Application
+<img width="1913" height="1036" alt="Screenshot 2026-04-29 123918" src="https://github.com/user-attachments/assets/5e55fa80-e421-4c10-a494-b860283f0c00" />
 
 ## Overview
 This project is a full-stack, session-based expense tracking web application that allows users to manage personal finances across multiple expense files (ledgers). Each user can create, manage, and analyze expenses in isolated files, ensuring complete data ownership and clarity.
